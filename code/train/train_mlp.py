@@ -1,83 +1,77 @@
-import argparse
-
+import sys
+import os
 import torch
 import torch.nn as nn
+import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
+import pandas as pd
 
-from code.models.mlp import MLP
+# Add the parent directory to path so we can import 'models' and 'utils'
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from models.mlp import NIDSBinaryClassifier
+from utils.metrics import calculate_accuracy
 
-def parse_args():
-	parser = argparse.ArgumentParser(description="Train MLP model")
-	parser.add_argument("--input-dim", type=int, required=True,
-						help="Input feature dimension")
-	parser.add_argument("--num-classes", type=int, required=True,
-						help="Number of output classes")
-	parser.add_argument("--batch-size", type=int, default=64)
-	parser.add_argument("--epochs", type=int, default=10)
-	parser.add_argument("--lr", type=float, default=1e-3)
-	parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-	parser.add_argument("--model-path", type=str, default="mlp.pth",
-						help="Path to save trained model")
-	return parser.parse_args()
+# --- Configuration ---
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+BATCH_SIZE = 64
+EPOCHS = 10
+LR = 0.001
+# Get the absolute path of the current script file
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Navigate up two levels (train -> code -> root) to find 'data'
+PROCESSED_PATH = os.path.join(SCRIPT_DIR, '../../data/unsw-nb15/processed/')
 
+def load_data(path):
+    df = pd.read_csv(path)
+    
+    # --- DEBUGGING BLOCK ---
+    # Check for non-numeric columns
+    non_numeric = df.select_dtypes(include=['object']).columns
+    if len(non_numeric) > 0:
+        print(f"ERROR: Found non-numeric columns in {path}:")
+        print(non_numeric.tolist())
+        # Print first few values of the culprit columns
+        print(df[non_numeric].head())
+        raise ValueError("Data contains strings! Preprocessing might have failed.")
+    # -----------------------
+    X = torch.tensor(df.drop('label', axis=1).values, dtype=torch.float32) 
+    y = torch.tensor(df['label'].values, dtype=torch.float32).unsqueeze(1)
+    return TensorDataset(X, y)
 
-def create_dummy_dataloader(input_dim: int, num_classes: int, batch_size: int) -> DataLoader:
-	# Placeholder: replace with real dataset loading logic used in the project.
-	num_samples = 1024
-	x = torch.randn(num_samples, input_dim)
-	y = torch.randint(0, num_classes, (num_samples,))
-	dataset = TensorDataset(x, y)
-	return DataLoader(dataset, batch_size=batch_size, shuffle=True)
+def train():
+    print(f"Training on {DEVICE}")
+    
+    # 1. Load Data
+    train_data = load_data(os.path.join(PROCESSED_PATH, 'train.csv'))
+    train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True)
 
+    # 2. Initialize Model
+    model = NIDSBinaryClassifier(input_shape=197).to(DEVICE)
+    criterion = nn.BCELoss()
+    optimizer = optim.Adam(model.parameters(), lr=LR)
 
-def train_one_epoch(model, dataloader, criterion, optimizer, device):
-	model.train()
-	running_loss = 0.0
-	correct = 0
-	total = 0
+    # 3. Training Loop
+    for epoch in range(EPOCHS):
+        model.train()
+        running_loss = 0.0
+        
+        for inputs, labels in train_loader:
+            inputs, labels = inputs.to(DEVICE), labels.to(DEVICE)
+            
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            
+            running_loss += loss.item()
+            
+        print(f"Epoch {epoch+1}/{EPOCHS} - Loss: {running_loss/len(train_loader):.4f}")
 
-	for inputs, targets in dataloader:
-		inputs = inputs.to(device)
-		targets = targets.to(device)
-
-		optimizer.zero_grad()
-		outputs = model(inputs)
-		loss = criterion(outputs, targets)
-		loss.backward()
-		optimizer.step()
-
-		running_loss += loss.item() * inputs.size(0)
-		_, predicted = outputs.max(1)
-		total += targets.size(0)
-		correct += predicted.eq(targets).sum().item()
-
-	epoch_loss = running_loss / total
-	epoch_acc = 100.0 * correct / total
-	return epoch_loss, epoch_acc
-
-
-def main():
-	args = parse_args()
-
-	device = torch.device(args.device)
-
-	model = MLP(input_dim=args.input_dim, num_classes=args.num_classes).to(device)
-	train_loader = create_dummy_dataloader(args.input_dim, args.num_classes, args.batch_size)
-
-	criterion = nn.CrossEntropyLoss()
-	optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-
-	for epoch in range(1, args.epochs + 1):
-		train_loss, train_acc = train_one_epoch(
-			model, train_loader, criterion, optimizer, device
-		)
-		print(f"Epoch {epoch}/{args.epochs} - Loss: {train_loss:.4f} - Acc: {train_acc:.2f}%")
-
-	torch.save(model.state_dict(), args.model_path)
-	print(f"Model saved to {args.model_path}")
-
+    # 4. Save the trained model state
+    torch.save(model.state_dict(), '../models/nids_binary_model.pth')
+    print("Model saved to models/nids_binary_model.pth")
 
 if __name__ == "__main__":
-	main()
-
+    train()

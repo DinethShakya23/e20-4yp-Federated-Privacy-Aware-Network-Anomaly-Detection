@@ -1,17 +1,23 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MLP(nn.Module):
-    def __init__(self, input_dim, num_classes=100):
-        super(MLP, self).__init__()
-        self.fc = nn.Linear(input_dim, num_classes)
-
-        # Initialize weights to zero 
-        nn.init.zeros_(self.fc.weight)
-        nn.init.zeros_(self.fc.bias)
+class NIDSBinaryClassifier(nn.Module):
+    def __init__(self, input_shape=197):
+        super(NIDSBinaryClassifier, self).__init__()
+        
+        # Layer 1: Input -> Hidden
+        self.layer1 = nn.Linear(input_shape, 64) 
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.5)
+        
+        # Layer 2: Hidden -> Output
+        self.output = nn.Linear(64, 1)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        x = self.fc(x)
-        x = F.softmax(x, dim=1)
+        x = self.layer1(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        x = self.output(x)
+        x = self.sigmoid(x)
         return x
