@@ -9,18 +9,24 @@ from models.mlp import NIDSBinaryClassifier
 from utils.metrics import calculate_accuracy
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def evaluate():
     # 1. Load Data
-    df_test = pd.read_csv('../data/unsw-nb15/processed/test.csv')
-    X_test = torch.tensor(df_test.drop('labels', axis=1).values, dtype=torch.float32)
-    y_test = torch.tensor(df_test['labels'].values, dtype=torch.float32).unsqueeze(1)
+    df_test = pd.read_csv(os.path.join(SCRIPT_DIR, '../../data/unsw-nb15/processed/test.csv'))
+    # Ensure all feature columns are numeric floats before creating tensors
+    test_features = df_test.drop('label', axis=1)
+    X_test_np = test_features.to_numpy(dtype='float32')
+    X_test = torch.tensor(X_test_np, dtype=torch.float32)
+    y_test = torch.tensor(df_test['label'].values, dtype=torch.float32).unsqueeze(1)
     
     test_loader = DataLoader(TensorDataset(X_test, y_test), batch_size=64, shuffle=False)
 
     # 2. Load Model
-    model = NIDSBinaryClassifier(input_shape=197).to(DEVICE)
-    model.load_state_dict(torch.load('../models/nids_binary_model.pth'))
+    # Match model input size to test feature dimension
+    input_dim = X_test.shape[1]
+    model = NIDSBinaryClassifier(input_shape=input_dim).to(DEVICE)
+    model.load_state_dict(torch.load(os.path.join(SCRIPT_DIR, '../models/nids_binary_model.pth')))
     model.eval() # Important: Disables Dropout
 
     # 3. Evaluation Loop
