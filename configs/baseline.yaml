@@ -13,7 +13,7 @@ simulation:
 client:
   epochs: 1
   batch_size: 32
-  device: "cpu"  # Change to "cuda" if you have GPU
+  device: "cuda"  
 
 data:
   path: "data/unsw-nb15/processed/train_pool.pt"
