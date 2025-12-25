@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import torch
 import os
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.model_selection import train_test_split
 
 # --- CONFIGURATION ---
@@ -81,7 +81,7 @@ def clean_and_process():
     
     # 7. FIT SCALERS ON TRAIN ONLY 🛑
     print("   ⚖️ Fitting Scalers on TRAIN set only...")
-    scaler = MinMaxScaler((0, 1))
+    scaler = StandardScaler()
     
     # Fit on Train, Transform Train
     X_train[num_cols] = scaler.fit_transform(X_train[num_cols])
