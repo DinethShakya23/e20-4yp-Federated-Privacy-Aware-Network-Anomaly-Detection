@@ -37,82 +37,103 @@ def clean_and_process():
     # Handle NaNs (rare in UNSW, but good practice)
     df = df.fillna(0)
 
-    # 3. NUMERICAL SCALING (Log + MinMax)
-    print("   ⚖️ Scaling Numerical Features...")
-    
-    # A) Log Transform heavy columns
-    for col in LOG_COLS:
-        if col in df.columns:
-            # clip(lower=0) ensures no negative values before log
-            df[col] = np.log1p(df[col].clip(lower=0))
-
-    # B) MinMax Scale ALL numerical columns (except target)
-    # Select only numeric types first
-    num_cols = df.select_dtypes(include=['float64', 'int64']).columns
-    # Remove target column from scaling if it accidentally got selected
-    if 'attack_cat' in num_cols:
-        num_cols = num_cols.drop('attack_cat')
-    
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    df[num_cols] = scaler.fit_transform(df[num_cols])
-
-    # 4. CATEGORICAL ENCODING (Top-K + One-Hot)
-    print("   🏷️ Encoding Categorical Features...")
-    for col in CAT_COLS:
-        if col in df.columns:
-            # Keep Top 10 frequent values, map rest to 'other'
-            top_10 = df[col].value_counts().nlargest(10).index
-            df.loc[~df[col].isin(top_10), col] = 'other'
-    
-    # One-Hot Encode (creates boolean columns, then casts to float)
-    df = pd.get_dummies(df, columns=CAT_COLS, dtype=float)
-
-    # 5. TARGET ENCODING
-    # We need to turn strings ('Normal', 'Analysis', 'Backdoor') into Integers (0, 1, 2)
-    print("   🎯 Encoding Targets...")
-    # Ensure 'Normal' is always 0 for consistency
-    unique_attacks = sorted(df['attack_cat'].unique())
-    # Move 'Normal' to index 0 manually if present
-    if 'Normal' in unique_attacks:
-        unique_attacks.remove('Normal')
-        unique_attacks.insert(0, 'Normal')
-    
-    # Create the map
-    label_map = {name: i for i, name in enumerate(unique_attacks)}
+    #3. ENCODE TARGETS
+    if 'Normal' in df['attack_cat'].unique():
+        # Ensure Normal is 0
+        df['attack_cat'] = df['attack_cat'].replace('Normal', 'Normal_Tmp')
+        unique_attacks = ['Normal_Tmp'] + sorted([x for x in df['attack_cat'].unique() if x != 'Normal_Tmp'])
+        label_map = {name: i for i, name in enumerate(unique_attacks)}
+        # Fix the name back
+        label_map['Normal'] = label_map.pop('Normal_Tmp')
+        df['attack_cat'] = df['attack_cat'].replace('Normal_Tmp', 'Normal')
+    else:
+        label_map = {name: i for i, name in enumerate(sorted(df['attack_cat'].unique()))}
+        
     df['attack_cat'] = df['attack_cat'].map(label_map)
-    
-    print(f"   ℹ️ Class Mapping: {label_map}")
+    print(f"   ℹ️ Class Mapping: {label_map}")
 
-    # 6. SPLIT & SAVE
-    print("   💾 Saving PyTorch Tensors...")
-    X = df.drop('attack_cat', axis=1).values.astype('float32')
-    y = df['attack_cat'].values.astype('int64')
+    # 4. SEPARATE FEATURES & TARGET
+    X = df.drop('attack_cat', axis=1)
+    y = df['attack_cat']
 
-    # Stratified Split (80% Train Pool, 20% Global Test)
+    # 5. SPLIT BEFORE PROCESSING 
+    # This ensures Test statistics never touch the Train scaler
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.20, random_state=42, stratify=y
     )
-
-    # Save dictionary containing Tensors + Metadata (feature count, class map)
-    os.makedirs(PROCESSED_DIR, exist_ok=True)
     
+    print(f"   ✅ Data Split: Train {X_train.shape}, Test {X_test.shape}")
+
+    # 6. DEFINE PREPROCESSING PIPELINE
+    # Numerical Pipeline: Log -> Impute -> Scale
+    # Note: We apply Log only to specific columns, but Scaling to ALL numeric
+    # For simplicity in this script, we can manually log-transform X_train/X_test first
+    # to avoid complex ColumnTransformer nesting.
+    
+    # --- MANUAL LOG TRANSFORM (Element-wise, so no leakage) ---
+    for col in LOG_COLS:
+        if col in X_train.columns:
+            X_train[col] = np.log1p(X_train[col].clip(lower=0))
+            X_test[col] = np.log1p(X_test[col].clip(lower=0))
+
+    # Identify numeric/categorical columns AFTER split
+    num_cols = X_train.select_dtypes(include=['float64', 'int64']).columns
+    
+    # 7. FIT SCALERS ON TRAIN ONLY 🛑
+    print("   ⚖️ Fitting Scalers on TRAIN set only...")
+    scaler = MinMaxScaler((0, 1))
+    
+    # Fit on Train, Transform Train
+    X_train[num_cols] = scaler.fit_transform(X_train[num_cols])
+    
+    # Transform Test (using Train's Min/Max)
+    X_test[num_cols] = scaler.transform(X_test[num_cols])
+
+    # 8. HANDLE CATEGORICAL (Top-K on Train Only)
+    print("   🏷️ Encoding Categorical (Top-10 from TRAIN only)...")
+    
+    for col in CAT_COLS:
+        if col in X_train.columns:
+            # 1. Determine Top 10 based on TRAIN data
+            top_10 = X_train[col].value_counts().nlargest(10).index
+            
+            # 2. Apply to Train
+            X_train[col] = X_train[col].apply(lambda x: x if x in top_10 else 'other')
+            
+            # 3. Apply to Test (Unknowns in Test become 'other' automatically)
+            X_test[col] = X_test[col].apply(lambda x: x if x in top_10 else 'other')
+
+    # One-Hot Encoding
+    # We use pd.get_dummies but we must align columns because Test might miss a category
+    # or have one we mapped to 'other'. 
+    # Since we mapped everything not in Top-10 to 'other', columns should match exactly.
+    X_train = pd.get_dummies(X_train, columns=CAT_COLS, dtype=float)
+    X_test = pd.get_dummies(X_test, columns=CAT_COLS, dtype=float)
+
+    # Re-align columns just in case (e.g., if 'other' didn't appear in one set)
+    X_train, X_test = X_train.align(X_test, join='outer', axis=1, fill_value=0)
+
+    # 9. SAVE
+    print("   💾 Saving PyTorch Tensors...")
+    
+    # Convert to Float32/Int64 Tensors
     train_payload = {
-        'X': torch.tensor(X_train),
-        'y': torch.tensor(y_train),
+        'X': torch.tensor(X_train.values.astype('float32')),
+        'y': torch.tensor(y_train.values.astype('int64')),
         'label_map': label_map
     }
     
     test_payload = {
-        'X': torch.tensor(X_test),
-        'y': torch.tensor(y_test),
+        'X': torch.tensor(X_test.values.astype('float32')),
+        'y': torch.tensor(y_test.values.astype('int64')),
         'label_map': label_map
     }
 
+    os.makedirs(PROCESSED_DIR, exist_ok=True)
     torch.save(train_payload, f"{PROCESSED_DIR}/train_pool.pt")
     torch.save(test_payload, f"{PROCESSED_DIR}/global_test.pt")
-
-    print(f"   ✅ SUCCESS! Processed data saved to {PROCESSED_DIR}")
-    print(f"   📊 Final Feature Count: {X.shape[1]}")
+    
+    print(f"   ✅ Done! ")
 
 if __name__ == "__main__":
     clean_and_process()
