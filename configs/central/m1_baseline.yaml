@@ -1,0 +1,25 @@
+# configs/centralized/m1_baseline.yaml
+
+# Experiment Metadata
+name: "M1_Baseline_UNSW_Raw"
+project: "NIDS_Centralized"
+
+# Data Settings (Points to your UNSW-NB15 processed data)
+# NOTE: Ensure this path matches exactly where your .pt files are
+data_path: "data/unsw-nb15/processed/train_pool.pt"
+
+# Model Hyperparameters (Matches your Net class)
+input_dim: 71
+num_classes: 10  
+hidden_sizes: [128, 64, 32] # Implicitly defined in your Net class, just for logging info
+dropout: 0.2
+
+# Training Settings
+batch_size: 128
+epochs: 20
+lr: 0.001
+device: "cuda"
+
+# --- MILESTONE SWITCHES ---
+# Milestone 1 is the "Truthful Baseline" (No tricks)
+use_class_weights: false
