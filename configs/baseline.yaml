@@ -3,19 +3,25 @@ defaults:
 
 simulation:
   rounds: 15 
-  n_clients: 40
+  n_clients: 10
   fraction: 1.0
   partition_method: "iid"
   alpha: 0.5
 
 client:
-  epochs: 25    
-  lr: 0.05
-  batch_size: 1024
-  device: "cuda"  # Change to "cuda" if you have GPU
+  epochs: 5  # FL: Use 3-5 local epochs per round (not 30!)
+  lr: 0.001  # M12: Lower learning rate for Adam
+  batch_size: 512  # M12: Standard batch size
+  device: "cuda"
+  
+  # M12 Configuration
+  use_class_weights: true
+  weight_method: "sqrt"  # 'sqrt' (moderate) or 'inverse' (aggressive)
+  use_scheduler: false  # Disable for FL - too few local epochs
+  early_stopping_patience: 3  # Keep for safety, but unlikely to trigger with 5 epochs
 
 server:
-  defense: "krum"   # "avg", "median", "trimmed_mean", "krum"
+  defense: "avg"   # "avg", "median", "trimmed_mean", "krum"
                     # if you use "krum" --> update the # of malicious clients in server.py, default value = 1
 
 data:
@@ -23,7 +29,7 @@ data:
 
 #😈 RED TEAM SECTION
 attack:
-  type: "backdoor"   # Options: clean, backdoor, label_flip
+  type: "clean"   # Options: clean, backdoor, label_flip
   poison_ratio: 0.3
   trigger_feat_idx: 0
   trigger_value: 5.0
