@@ -175,16 +175,16 @@ Dense(10, Softmax)
 **Per-Class Performance:**
 | Class | Precision | Recall | F1-Score |
 |-------|-----------|--------|----------|
-| Normal | 0.83 | 0.94 | 0.88 |
-| Generic | 0.77 | 0.76 | 0.77 |
-| Exploits | 0.84 | 0.85 | 0.84 |
-| Fuzzers | 0.89 | 0.79 | 0.84 |
-| DoS | 0.90 | 0.76 | 0.82 |
-| Reconnaissance | 0.89 | 0.74 | 0.81 |
-| Analysis | 0.47 | 0.50 | 0.48 |
-| Backdoor | 0.32 | 0.49 | 0.38 |
-| Shellcode | 0.77 | 0.83 | 0.80 |
-| Worms | 0.88 | 0.71 | 0.79 |
+| Normal | 0.95 | 0.83 | 0.89 |
+| Generic | 1.00 | 0.97 | 0.99 |
+| Exploits | 0.81 | 0.55 | 0.65 |
+| Fuzzers | 0.55 | 0.74 | 0.63 |
+| DoS | 0.36 | 0.74 | 0.48 |
+| Reconnaissance | 0.83 | 0.82 | 0.82 |
+| Analysis | 0.25 | 0.14 | 0.18 |
+| Backdoor | 0.18 | 0.25 | 0.21 |
+| Shellcode | 0.37 | 0.78 | 0.51 |
+| Worms | 0.14 | 0.60 | 0.22 |
 
 **Key Insight:** Early stopping critical - model peaked at epoch 29 but would have degraded by epoch 50.
 
